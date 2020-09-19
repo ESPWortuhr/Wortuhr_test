@@ -1,10 +1,123 @@
 #include <Arduino.h>
 
 //------------------------------------------------------------------------------
+// Telnet Server für Konsolen Ausgaben
+//------------------------------------------------------------------------------
+
+void Telnet()
+{
+  // Cleanup disconnected session
+  for(uint8_t i = 0; i < MAX_TELNET_CLIENTS; i++)
+  {
+    if (TelnetClient[i] && !TelnetClient[i].connected())
+    {
+      Serial.print("Client disconnected ... terminate session "); Serial.println(i+1); 
+      TelnetClient[i].stop();
+    }
+  }
+  
+  // Check new client connections
+  if (TelnetServer.hasClient())
+  {
+    ConnectionEstablished = false; // Set to false
+    
+    for(uint8_t i = 0; i < MAX_TELNET_CLIENTS; i++)
+    {
+      // Serial.print("Checking telnet session "); Serial.println(i+1);
+      
+      // find free socket
+      if (!TelnetClient[i])
+      {
+        TelnetClient[i] = TelnetServer.available(); 
+        
+        Serial.print("New Telnet client connected to session "); Serial.println(i+1);
+        
+        TelnetClient[i].flush();  // clear input buffer, else you get strange characters
+        TelnetClient[i].println("Welcome!");
+        
+        TelnetClient[i].print("Millis since start: ");
+        TelnetClient[i].println(millis());
+        
+        TelnetClient[i].print("Free Heap RAM: ");
+        TelnetClient[i].println(ESP.getFreeHeap());
+  
+        TelnetClient[i].println("----------------------------------------------------------------");
+        
+        ConnectionEstablished = true; 
+        
+        break;
+      }
+      else
+      {
+        // Serial.println("Session is in use");
+      }
+    }
+ 
+    if (ConnectionEstablished == false)
+    {
+      Serial.println("No free sessions ... drop connection");
+      TelnetServer.available().stop();
+      // TelnetMsg("An other user cannot connect ... MAX_TELNET_CLIENTS limit is reached!");
+    }
+  }
+ 
+  for(uint8_t i = 0; i < MAX_TELNET_CLIENTS; i++)
+  {
+    if (TelnetClient[i] && TelnetClient[i].connected())
+    {
+      if(TelnetClient[i].available())
+      { 
+        //get data from the telnet client
+        while(TelnetClient[i].available())
+        {
+          Serial.write(TelnetClient[i].read());
+        }
+      }
+    }
+  }
+}
+
+void TelnetMsg(String text)
+{
+  for(uint8_t i = 0; i < MAX_TELNET_CLIENTS; i++)
+  {
+    if (TelnetClient[i] || TelnetClient[i].connected())
+    {
+      TelnetClient[i].println(text);
+    }
+  }
+  delay(10);  // to avoid strange characters left in buffer
+}
+
+//------------------------------------------------------------------------------
 // Helligkeitsregelung nach Uhrzeiten oder per LDR
 //------------------------------------------------------------------------------
 
+
 void led_set(uint16_t i) {
+#ifdef Grbw
+    if (G.ldr == 1) {
+    unsigned int rr, gg, bb, ww;    
+    //Helligkeit
+    rr = (int)G.rgb[0][0] / ldrVal;
+    gg = (int)G.rgb[0][1] / ldrVal;
+    bb = (int)G.rgb[0][2] / ldrVal;
+	ww = (int)G.rgb[0][3] / ldrVal; 
+    RgbwColor color = RgbwColor(rr, gg, bb, ww);
+    strip.SetPixelColor(i, color);
+    }
+    else
+    {
+    unsigned int rr, gg, bb, ww;    
+    //Helligkeit
+    rr = (int)G.rgb[0][0] * G.hh / 100;
+    gg = (int)G.rgb[0][1] * G.hh / 100;
+    bb = (int)G.rgb[0][2] * G.hh / 100;
+	ww = (int)G.rgb[0][3] * G.hh / 100; 
+    RgbwColor color = RgbwColor(rr, gg, bb, ww);
+    strip.SetPixelColor(i, color);
+    }
+#else
   if (G.ldr == 1) {
   unsigned int rr, gg, bb;    
   //Helligkeit
@@ -12,7 +125,7 @@ void led_set(uint16_t i) {
   gg = (int)G.rgb[0][1] / ldrVal;
   bb = (int)G.rgb[0][2] / ldrVal;  
   RgbColor color = RgbColor(rr, gg, bb);
-  strip.SetPixelColor(i, color);  
+  strip.SetPixelColor(i, color);
   }
   else
   {
@@ -22,28 +135,48 @@ void led_set(uint16_t i) {
   gg = (int)G.rgb[0][1] * G.hh / 100;
   bb = (int)G.rgb[0][2] * G.hh / 100;  
   RgbColor color = RgbColor(rr, gg, bb);
-  strip.SetPixelColor(i, color);  
+  strip.SetPixelColor(i, color);
   }
+#endif
 }
 
 //------------------------------------------------------------------------------
 
+#ifdef UHR_114_Fraenkisch
+#include "uhr_func_114_Fraenkisch.h"
+#endif
+
 #ifdef UHR_114
 #include "uhr_func_114.h"
-#endif  
+#endif
 
 #ifdef UHR_125
 #include "uhr_func_125.h"
-#endif  
+#endif
 
-#ifdef UHR_169 
+#ifdef UHR_169
 #include "uhr_func_169.h"
+#endif
+
+#ifdef UHR_242 
+#include "uhr_func_242.h"
 #endif 
 
 //------------------------------------------------------------------------------
 
 void led_show() {
   strip.Show();
+}
+
+//------------------------------------------------------------------------------
+
+void led_clear_pixel(uint16_t i) {
+#ifdef Grbw
+  RgbwColor color = RgbwColor(0, 0, 0, 0);
+#else
+  RgbColor color = RgbColor(0, 0, 0);
+#endif
+  strip.SetPixelColor(i, color);      
 }
 
 //------------------------------------------------------------------------------
@@ -55,10 +188,22 @@ void led_set_pixel(byte r, byte g, byte b, uint16_t i) {
 }
 
 //------------------------------------------------------------------------------
+#ifdef Grbw
+void led_set_pixel_rgbw(byte r, byte g, byte b, byte w, uint16_t i) {
+    
+  RgbwColor color = RgbwColor(r, g, b, w);
+  strip.SetPixelColor(i, color);      
+}
+#endif
+//------------------------------------------------------------------------------
 
 void led_clear() {
   uint8_t i;
+#ifdef Grbw
+  RgbwColor color = RgbwColor(0, 0, 0, 0);
+#else
   RgbColor color = RgbColor(0, 0, 0);
+#endif
   for(i=0; i<NUM_PIXELS; i++)
   {
     strip.SetPixelColor(i, color);         
@@ -69,7 +214,11 @@ void led_clear() {
 
 void uhr_clear() {
   uint8_t i;
+#ifdef Grbw
+  RgbwColor color = RgbwColor(0, 0, 0, 0);
+#else
   RgbColor color = RgbColor(0, 0, 0);
+#endif
   for(i=0; i<NUM_SMATRIX; i++)
   {
     strip.SetPixelColor(smatrix[i], color);
@@ -81,7 +230,11 @@ void uhr_clear() {
 #ifdef UHR_169 
 void rahmen_clear() {
   uint8_t i;
+#ifdef Grbw
+  RgbwColor color = RgbwColor(0, 0, 0, 0);
+#else
   RgbColor color = RgbColor(0, 0, 0);
+#endif
   for(i=0; i<NUM_RMATRIX; i++)
   {
     strip.SetPixelColor(rmatrix[i], color);
@@ -100,8 +253,8 @@ void rahmen_clear() {
 byte *  hsv_to_rgb (unsigned int h,unsigned char s,unsigned char v)
 {   
     unsigned char diff;
-    unsigned int z, r, g ,b;
-    static byte c[3];
+    unsigned int r = 0, g = 0 ,b = 0, w = 0;
+    static byte c[4];
 
     //Winkel im Farbkeis 0 - 360 in 1 Grad Schritten
     //h = (englisch hue) Farbwert
@@ -134,7 +287,7 @@ byte *  hsv_to_rgb (unsigned int h,unsigned char s,unsigned char v)
     }   
     
   //Berechnung der Farbsättigung
-  //s = (englisch saturation) Farbsättigung   
+  //s = (englisch saturation) Farbsättigung
   s = 255 - s; //Kehrwert berechnen
   diff = ((255 - r) * s)/255;
   r = r + diff;
@@ -147,11 +300,13 @@ byte *  hsv_to_rgb (unsigned int h,unsigned char s,unsigned char v)
   //v = (englisch value) Wert Dunkelstufe einfacher Dreisatz 0..100%
   r = (r * v)/255;   
   g = (g * v)/255;     
-  b = (b * v)/255;   
+  b = (b * v)/255;
+  w = (r + g + b)/3;   
 
   c[0] = r;
   c[1] = g;
-  c[2] = b;    
+  c[2] = b;
+  c[3] = w;    
   return c;  
 }
 
@@ -170,8 +325,12 @@ void led_single(uint8_t wait) {
     if(h>360) h-=360;    
     
     led_clear();
-    c = hsv_to_rgb(h,255,255);       
-    led_set_pixel(c[0], c[1], c[2], i);     
+    c = hsv_to_rgb(h,255,255);   
+#ifdef Grbw
+    led_set_pixel_rgbw(c[0], c[1], c[2], c[3], i);
+#else
+    led_set_pixel(c[0], c[1], c[2], i);
+#endif    
     led_show();
     delay(wait);
   }
@@ -181,19 +340,25 @@ void led_single(uint8_t wait) {
 
 void set_farbe() {
 
-  unsigned int rr, gg, bb, zz;  
+  unsigned int rr, gg, bb, ww, zz;  
   rr = G.rgb[3][0];
   gg = G.rgb[3][1];
   bb = G.rgb[3][2];
+  ww = G.rgb[3][3];
   zz = rr + gg + bb;
   if (zz > 150) {
     zz = zz * 10 / 150;
     rr = (int)rr * 10 / zz;
     gg = (int)gg * 10 / zz;
     bb = (int)bb * 10 / zz;
+	ww = (int)ww * 10 / zz;
   }
   for( int i = 0; i < NUM_PIXELS;i++){ 
-    led_set_pixel(rr, gg, bb, i);          
+#ifdef Grbw
+    led_set_pixel_rgbw(rr, gg, bb, ww, i);
+#else
+    led_set_pixel(rr, gg, bb, i); 
+#endif         
   }
 }
 
@@ -205,18 +370,11 @@ void doLDRLogic() {
   if(millis() >= waitUntilLDR) {
      waitUntilLDR = millis();
      int temp = analogRead(A0);
-  //  #ifdef DEBUG     
-  //    USE_SERIAL.print("LDR Wert : ");USE_SERIAL.println(temp);
-  //  #endif 
-
-     temp = temp - G.ldrCal;                
+     temp = temp - G.ldrCal;
      if (temp >= 900 ) temp = 900;
      if (temp <= 1 ) temp = 1;
       ldrVal = map(temp, 1, 900, 1, 100);
       waitUntilLDR += oneseconddelay;
-//      #ifdef DEBUG     
-//      USE_SERIAL.print("LDR Wert : ");USE_SERIAL.println(ldrVal);
-//      #endif
   }
 }
 
@@ -225,19 +383,25 @@ void doLDRLogic() {
 #ifdef UHR_169 
 void set_farbe_rahmen() {
 
-  unsigned int rr, gg, bb, zz;  
+  unsigned int rr, gg, bb, ww, zz;  
   rr = G.rgb[2][0];
   gg = G.rgb[2][1];
   bb = G.rgb[2][2];
+  ww = G.rgb[2][3];
   zz = rr + gg + bb;
   if (zz > 150) {
     zz = zz * 10 / 150;
     rr = (int)rr * 10 / zz;
     gg = (int)gg * 10 / zz;
     bb = (int)bb * 10 / zz;
+	ww = (int)ww * 10 / zz;
   } 
   for( int i = 0; i < NUM_RMATRIX;i++){ 
-    led_set_pixel(rr, gg, bb, rmatrix[i]);          
+#ifdef Grbw
+    led_set_pixel_rgbw(rr, gg, bb, ww, rmatrix[i]);
+#else
+    led_set_pixel(rr, gg, bb, rmatrix[i]);   
+#endif       
   }
 }
 #endif   
@@ -251,7 +415,11 @@ void rainbow() {
   c = hsv_to_rgb(h, 255, G.hell*10);
     
   for( int i = 0; i < NUM_PIXELS;i++){     
-    led_set_pixel(c[0], c[1], c[2], i);  
+#ifdef Grbw
+    led_set_pixel_rgbw(c[0], c[1], c[2], c[3], i);
+#else
+    led_set_pixel(c[0], c[1], c[2], i); 
+#endif    
   }
   led_show();
   h++;
@@ -268,7 +436,11 @@ void rainbowCycle() {
   hh = h;
   for(i=0; i< NUM_SMATRIX; i++) {
     c = hsv_to_rgb(hh, 255, G.hell*10);
-    led_set_pixel(c[0], c[1], c[2], smatrix[i]);
+#ifdef Grbw
+    led_set_pixel_rgbw(c[0], c[1], c[2], c[3], smatrix[i]);
+#else
+    led_set_pixel(c[0], c[1], c[2], smatrix[i]);   
+#endif
     hh = hh + (360 / NUM_SMATRIX);
     if (hh > 360){ hh = 0; }      
   }
@@ -293,10 +465,15 @@ void schweif_up(){
     
     G.rr = (G.rgb[3][0] * c)/255;   
     G.gg = (G.rgb[3][1] * c)/255;     
-    G.bb = (G.rgb[3][2] * c)/255;  
+    G.bb = (G.rgb[3][2] * c)/255;
+	G.ww = (G.rgb[3][3] * c)/255;  
     j = t + i;
     if (j >= 48){ j = j -48; }
-    led_set_pixel(G.rr, G.gg, G.bb, rmatrix[j]); 
+#ifdef Grbw
+    led_set_pixel_rgbw(G.rr, G.gg, G.bb, G.ww, rmatrix[i]);
+#else
+    led_set_pixel(G.rr, G.gg, G.bb, rmatrix[i]);   
+#endif
   }  
   led_show();
   x++;
@@ -311,7 +488,7 @@ void schweif_up(){
 void zeigeipap() {
     static int i = 0, ii = 0;
         
-    char buf[18];
+    char buf[20];
     sprintf(buf, "IP:%d.%d.%d.%d", WiFi.softAPIP()[0], WiFi.softAPIP()[1], WiFi.softAPIP()[2], WiFi.softAPIP()[3] );
 
   // Alle Pixes eins nach recht schieben 
@@ -324,14 +501,18 @@ void zeigeipap() {
   if (i < 5) {
     for(int h=0;h<8;h++){
       if (font_7x5[buf[ii]][i] & (1 << h)) {  
-        led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][10]);               
+		#ifdef Grbw
+        led_set_pixel_rgbw(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], G.rgb[3][3], matrix[h+1][10]);
+		#else
+		led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][10]);
+		#endif           
       }else{            
-        led_set_pixel(0, 0, 0, matrix[h+1][10]);  
+        led_clear_pixel(matrix[h+1][10]);  
       }        
     }
   }else{ 
     for(int h=0;h<8;h++){    
-      led_set_pixel(0, 0, 0, matrix[h+1][10]);          
+      led_clear_pixel(matrix[h+1][10]);          
     }
   }  
   led_show();
@@ -348,7 +529,7 @@ void zeigeipap() {
 void zeigeip() {
     static int i = 0, ii = 0;
         
-    char buf[18];
+    char buf[20];
     sprintf(buf, "IP:%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
 
   // Alle Pixes eins nach recht schieben 
@@ -361,14 +542,18 @@ void zeigeip() {
   if (i < 5) {
     for(int h=0;h<8;h++){
       if (font_7x5[buf[ii]][i] & (1 << h)) {  
-        led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][10]);               
+		#ifdef Grbw
+		 led_set_pixel_rgbw(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], G.rgb[3][3], matrix[h+1][10]);
+		#else
+		 led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][10]);
+		#endif               
       }else{            
-        led_set_pixel(0, 0, 0, matrix[h+1][10]);  
+        led_clear_pixel(matrix[h+1][10]);  
       }        
     }
   }else{ 
     for(int h=0;h<8;h++){    
-      led_set_pixel(0, 0, 0, matrix[h+1][10]);          
+      led_clear_pixel(matrix[h+1][10]);          
     }
   }  
   led_show();
@@ -396,14 +581,18 @@ void laufschrift() {
   if (i < 5) {
     for(int h=0;h<8;h++){
       if (font_7x5[G.ltext[ii]][i] & (1 << h)) {  
-        led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][10]);               
+		#ifdef Grbw
+ 		 led_set_pixel_rgbw(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], G.rgb[3][3], matrix[h+1][10]);
+		#else
+ 		 led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][10]);
+		#endif                
       }else{            
-        led_set_pixel(0, 0, 0, matrix[h+1][10]);  
+        led_clear_pixel(matrix[h+1][10]);  
       }        
     }
   }else{ 
     for(int h=0;h<8;h++){    
-      led_set_pixel(0, 0, 0, matrix[h+1][10]);          
+      led_clear_pixel(matrix[h+1][10]);          
     }
   }  
   led_show();
@@ -428,11 +617,19 @@ void zahlen(char d1, char d2) {
     for(int h=0;h<8;h++){  
       // 1. Zahl
       if (font_7x5[d1][i] & (1 << h)) {       
-        led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][i]);         
+		#ifdef Grbw
+ 		 led_set_pixel_rgbw(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], G.rgb[3][3], matrix[h+1][i]);
+		#else
+ 		 led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][i]);
+		#endif          
       }
       // 2. Zahl
       if (font_7x5[d2][i] & (1 << h)) {   
-        led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][i+6]);      
+		#ifdef Grbw
+ 		 led_set_pixel_rgbw(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], G.rgb[3][3], matrix[h+1][i+6]);
+		#else
+ 		led_set_pixel(G.rgb[3][0], G.rgb[3][1], G.rgb[3][2], matrix[h+1][i+6]);
+		#endif       
       }        
     }
   }
@@ -451,7 +648,11 @@ void laufen(unsigned int d, unsigned char aktion){
       {
         strip.SetPixelColor(smatrix[a-1], strip.GetPixelColor(smatrix[a-2]));           
       }
-      led_set_pixel(G.rr, G.gg, G.bb, smatrix[0]);   
+	  #ifdef Grbw
+      led_set_pixel_rgbw(G.rr, G.gg, G.bb, G.ww, smatrix[0]);
+	  #else
+	  led_set_pixel(G.rr, G.gg, G.bb, smatrix[0]);
+	  #endif   
       led_show();
       delay(d);
     }
@@ -484,7 +685,11 @@ void wischen(unsigned char r, unsigned char g, unsigned char b, unsigned int d) 
     if (t > 0) {
       for (unsigned int v = 0; v < 11; v++)
       {
-        led_set_pixel(G.rr, G.gg, G.bb, matrix[t][v]); 
+		#ifdef Grbw
+        led_set_pixel_rgbw(G.rr, G.gg, G.bb, G.ww, matrix[t][v]);
+		#else
+		led_set_pixel(G.rr, G.gg, G.bb, matrix[t][v]);
+		#endif 
       }
     }
     led_show();
@@ -492,7 +697,11 @@ void wischen(unsigned char r, unsigned char g, unsigned char b, unsigned int d) 
   }
   for (u = 0; u < 11; u++)
   {
-    led_set_pixel(G.rr, G.gg, G.bb, matrix[t-1][u]);   
+	#ifdef Grbw
+	  led_set_pixel_rgbw(G.rr, G.gg, G.bb, G.ww, matrix[t-1][u]);
+	#else
+	  led_set_pixel(G.rr, G.gg, G.bb, matrix[t-1][u]);
+	#endif    
   }
   led_show();
 }
@@ -515,7 +724,11 @@ void schieben(int d, unsigned char aktion){
       }
       for (b = 0;b<11;b++)
       {
-        led_set_pixel(G.rr, G.gg, G.bb, matrix[a][b]);  
+		#ifdef Grbw
+    led_set_pixel_rgbw(G.rr, G.gg, G.bb, G.ww, matrix[a][b]);
+		#else
+		led_set_pixel(G.rr, G.gg, G.bb, matrix[a][b]);
+		#endif  
       }
       led_show();
       delay(d);
@@ -657,9 +870,10 @@ void show_sekunde() {
 }
 #endif 
 
+
 //------------------------------------------------------------------------------
 
-#ifdef UHR_114                                                                                        //vorher 169  markus 
+#ifdef UHR_114_Fraenkisch
 void show_minuten() {
   unsigned char m;
 
@@ -669,10 +883,30 @@ void show_minuten() {
     m = _minute;
     while (m > 4) { m -= 5; }
 
-    if (m > 0){ led_set(min_arr[G.zeige_min-1][114]); }                                             //vorher 0  
-    if (m > 1){ led_set(min_arr[G.zeige_min-1][115]); }                                             // vorher 1   Aber WARUM 114, 115 116 117 da nehmen muss, weiß ich net- 
-    if (m > 2){ led_set(min_arr[G.zeige_min-1][116]); }                                             //vorher 2    jedenfalls zeigte er mir die minuten bei der falschen LEDs an.
-    if (m > 3){ led_set(min_arr[G.zeige_min-1][117]); }                                             //vorher 3    Teste mal selber--
+    if (m > 0){ led_set(min_arr[G.zeige_min-1][0]); }
+    if (m > 1){ led_set(min_arr[G.zeige_min-1][1]); }
+    if (m > 2){ led_set(min_arr[G.zeige_min-1][2]); }
+    if (m > 3){ led_set(min_arr[G.zeige_min-1][3]); }                                             
+  }   
+}
+#endif  
+
+//------------------------------------------------------------------------------
+
+#ifdef UHR_114
+void show_minuten() {
+  unsigned char m;
+
+  if (G.zeige_min > 0){  
+    // Minuten / Sekunden-Animation
+    // Minute (1-4)  ermitteln
+    m = _minute;
+    while (m > 4) { m -= 5; }
+
+    if (m > 0){ led_set(min_arr[G.zeige_min-1][0]); }
+    if (m > 1){ led_set(min_arr[G.zeige_min-1][1]); }
+    if (m > 2){ led_set(min_arr[G.zeige_min-1][2]); }
+    if (m > 3){ led_set(min_arr[G.zeige_min-1][3]); }                                             
   }   
 }
 #endif   
@@ -689,19 +923,180 @@ void show_minuten() {
     m = _minute;
     while (m > 4) { m -= 5; }
 
-    if (m > 0){ led_set(min_arr[G.zeige_min-1][128]); }                                               
-    if (m > 1){ led_set(min_arr[G.zeige_min-1][127]); }                                             
-    if (m > 2){ led_set(min_arr[G.zeige_min-1][126]); }                                             
-    if (m > 3){ led_set(min_arr[G.zeige_min-1][125]); }                                             
+    if (m > 0){ led_set(min_arr[G.zeige_min-1][0]); }                                               
+    if (m > 1){ led_set(min_arr[G.zeige_min-1][1]); }                                             
+    if (m > 2){ led_set(min_arr[G.zeige_min-1][2]); }                                             
+    if (m > 3){ led_set(min_arr[G.zeige_min-1][3]); }                                             
   }   
 }
 #endif   
 
 //------------------------------------------------------------------------------
 
-void the_matrix() {
-       
+#ifdef UHR_242                                                                                        //vorher 169  markus 
+void show_minuten() {
+  unsigned char m;
+
+  if (G.zeige_min > 0){  
+    // Minuten / Sekunden-Animation
+    // Minute (1-4)  ermitteln
+    m = _minute;
+    while (m > 4) { m -= 5; }
+
+    if (m > 0){ led_set(min_arr[G.zeige_min-1][0]); }                                               
+    if (m > 1){ led_set(min_arr[G.zeige_min-1][1]); }                                             
+    if (m > 2){ led_set(min_arr[G.zeige_min-1][2]); }                                             
+    if (m > 3){ led_set(min_arr[G.zeige_min-1][3]); }                                             
+  }   
 }
+
+// Wetterdaten anzeigen
+void show_wetter() {
+
+   switch (wetterswitch) {
+   // +6h
+   case 1: {
+        switch (wstunde) {
+          case 1:   w_mittag(); break;
+          case 2:   w_abend(); break;
+          case 3:   w_nacht(); break;
+          case 4:   { w_morgen(); w_frueh(); } break;   
+          }
+        switch (wtemp_6) {
+          case 30:  { w_ueber(); w_dreissig(); w_grad(); } break;
+          case 25:  { w_ueber(); w_fuenf(); w_und(); w_zwanzig(); w_grad(); } break;
+          case 20:  { w_ueber(); w_zwanzig(); w_grad(); } break;
+          case 15:  { w_ueber(); w_fuenf(); w_zehn(); w_grad(); } break;
+          case 10:  { w_ueber(); w_zehn(); w_grad(); } break;
+          case 5:  { w_ueber(); w_fuenf(); w_grad(); } break;
+          case 1:  { w_ueber(); w_null(); w_grad(); } break;
+          case -1:  { w_unter(); w_minus(); w_null(); w_grad(); } break;
+          case -5:  { w_unter(); w_minus(); w_fuenf(); w_grad(); } break;
+          case -10:  { w_unter(); w_minus(); w_zehn(); w_grad(); } break;
+          case -15:  { w_unter(); w_minus(); w_fuenf(); w_zehn(); w_grad(); } break;
+          case -20:  { w_unter(); w_minus(); w_zwanzig(); w_grad(); } break;
+          case -25:  { w_unter(); w_minus(); w_fuenf(); w_und(); w_zwanzig(); w_grad(); } break;
+          }
+        switch (wwetter_6) {
+          case 200: w_gewitter(); break;
+          case 300: w_regen(); break;
+          case 500: w_regen(); break;
+          case 600: w_schnee(); break;
+          case 700: w_warnung(); break;
+          case 800: w_klar(); break;
+          case 801: w_wolken(); break;
+          }
+      }
+      break;
+   // +12h
+   case 2: {
+        switch (wstunde) {
+          case 1:   w_abend(); break;
+          case 2:   w_nacht(); break;
+          case 3:   { w_morgen(); w_frueh(); } break; 
+          case 4:   { w_morgen(); w_mittag(); } break;     
+          }
+        switch (wtemp_12) {
+          case 30:  { w_ueber(); w_dreissig(); w_grad(); } break;
+          case 25:  { w_ueber(); w_fuenf(); w_und(); w_zwanzig(); w_grad(); } break;
+          case 20:  { w_ueber(); w_zwanzig(); w_grad(); } break;
+          case 15:  { w_ueber(); w_fuenf(); w_zehn(); w_grad(); } break;
+          case 10:  { w_ueber(); w_zehn(); w_grad(); } break;
+          case 5:  { w_ueber(); w_fuenf(); w_grad(); } break;
+          case 1:  { w_ueber(); w_null(); w_grad(); } break;
+          case -1:  { w_unter(); w_minus(); w_null(); w_grad(); } break;
+          case -5:  { w_unter(); w_minus(); w_fuenf(); w_grad(); } break;
+          case -10:  { w_unter(); w_minus(); w_zehn(); w_grad(); } break;
+          case -15:  { w_unter(); w_minus(); w_fuenf(); w_zehn(); w_grad(); } break;
+          case -20:  { w_unter(); w_minus(); w_zwanzig(); w_grad(); } break;
+          case -25:  { w_unter(); w_minus(); w_fuenf(); w_und(); w_zwanzig(); w_grad(); } break;
+          }
+        switch (wwetter_12) {
+          case 200: w_gewitter(); break;
+          case 300: w_regen(); break;
+          case 500: w_regen(); break;
+          case 600: w_schnee(); break;
+          case 700: w_warnung(); break;
+          case 800: w_klar(); break;
+          case 801: w_wolken(); break;
+          }
+ 
+      }        
+      break;
+    // +18h    
+    case 3: {
+        switch (wstunde) {
+          case 1:   w_nacht(); break;
+          case 2:   { w_morgen(); w_frueh(); } break; 
+          case 3:   { w_morgen(); w_mittag(); } break; 
+          case 4:   { w_morgen(); w_abend(); } break;    
+          }
+        switch (wtemp_18) {
+          case 30:  { w_ueber(); w_dreissig(); w_grad(); } break;
+          case 25:  { w_ueber(); w_fuenf(); w_und(); w_zwanzig(); w_grad(); } break;
+          case 20:  { w_ueber(); w_zwanzig(); w_grad(); } break;
+          case 15:  { w_ueber(); w_fuenf(); w_zehn(); w_grad(); } break;
+          case 10:  { w_ueber(); w_zehn(); w_grad(); } break;
+          case 5:  { w_ueber(); w_fuenf(); w_grad(); } break;
+          case 1:  { w_ueber(); w_null(); w_grad(); } break;
+          case -1:  { w_unter(); w_minus(); w_null(); w_grad(); } break;
+          case -5:  { w_unter(); w_minus(); w_fuenf(); w_grad(); } break;
+          case -10:  { w_unter(); w_minus(); w_zehn(); w_grad(); } break;
+          case -15:  { w_unter(); w_minus(); w_fuenf(); w_zehn(); w_grad(); } break;
+          case -20:  { w_unter(); w_minus(); w_zwanzig(); w_grad(); } break;
+          case -25:  { w_unter(); w_minus(); w_fuenf(); w_und(); w_zwanzig(); w_grad(); } break;
+          }
+        switch (wwetter_18) {
+          case 200: w_gewitter(); break;
+          case 300: w_regen(); break;
+          case 500: w_regen(); break;
+          case 600: w_schnee(); break;
+          case 700: w_warnung(); break;
+          case 800: w_klar(); break;
+          case 801: w_wolken(); break;
+          }
+ 
+      }        
+      break;
+    // +24h
+    case 4: {
+        switch (wstunde) {
+          case 1:   { w_morgen(); w_frueh(); } break;
+          case 2:   { w_morgen(); w_mittag(); } break;
+          case 3:   { w_morgen(); w_abend(); } break;
+          case 4:   { w_morgen(); w_nacht(); } break;    
+          }
+        switch (wtemp_24) {
+          case 30:  { w_ueber(); w_dreissig(); w_grad(); } break;
+          case 25:  { w_ueber(); w_fuenf(); w_und(); w_zwanzig(); w_grad(); } break;
+          case 20:  { w_ueber(); w_zwanzig(); w_grad(); } break;
+          case 15:  { w_ueber(); w_fuenf(); w_zehn(); w_grad(); } break;
+          case 10:  { w_ueber(); w_zehn(); w_grad(); } break;
+          case 5:  { w_ueber(); w_fuenf(); w_grad(); } break;
+          case 1:  { w_ueber(); w_null(); w_grad(); } break;
+          case -1:  { w_unter(); w_minus(); w_null(); w_grad(); } break;
+          case -5:  { w_unter(); w_minus(); w_fuenf(); w_grad(); } break;
+          case -10:  { w_unter(); w_minus(); w_zehn(); w_grad(); } break;
+          case -15:  { w_unter(); w_minus(); w_fuenf(); w_zehn(); w_grad(); } break;
+          case -20:  { w_unter(); w_minus(); w_zwanzig(); w_grad(); } break;
+          case -25:  { w_unter(); w_minus(); w_fuenf(); w_und(); w_zwanzig(); w_grad(); } break;
+          }
+        switch (wwetter_24) {
+          case 200: w_gewitter(); break;
+          case 300: w_regen(); break;
+          case 500: w_regen(); break;
+          case 600: w_schnee(); break;
+          case 700: w_warnung(); break;
+          case 800: w_klar(); break;
+          case 801: w_wolken(); break;
+          }
+ 
+      }        
+      break;
+                
+   }      
+}
+#endif   
 
 
 //------------------------------------------------------------------------------
@@ -709,7 +1104,7 @@ void the_matrix() {
 void show_zeit(int flag) {
 
   unsigned char m, s;
-  unsigned int r, g, b, rr, gg, bb, zz;  
+  unsigned int r, g, b, rr, gg, ww, bb, zz;  
   if (flag == 1) {
     set_uhrzeit();
   }
@@ -728,6 +1123,7 @@ void show_zeit(int flag) {
   rr = G.rgb[1][0];
   gg = G.rgb[1][1];
   bb = G.rgb[1][2];
+  ww = G.rgb[1][3];
   zz = rr + gg + bb;
   
     //Helligkeit Hintergrund einstellen / LDR
@@ -735,17 +1131,23 @@ void show_zeit(int flag) {
   //Helligkeit LDR
   rr = (int)rr / ldrVal;
   gg = (int)gg / ldrVal;
-  bb = (int)bb / ldrVal;    
+  bb = (int)bb / ldrVal;
+  ww = (int)ww / ldrVal;   
   } else {
   rr = (int)rr * G.hh / 100;
   gg = (int)gg * G.hh / 100;
-  bb = (int)bb * G.hh / 100;      
+  bb = (int)bb * G.hh / 100;
+  ww = (int)ww * G.hh / 100;      
   }
   
   //Hintergrund setzen
   for (int t = 0; t < ROWS_MATRIX; t++){
     for (int b = 0; b < 11; b++){
-      led_set_pixel(rr, gg, bb, matrix[t][b]);
+		#ifdef Grbw
+      led_set_pixel_rgbw(rr, gg, bb, ww, matrix[t][b]);
+		#else
+	  led_set_pixel(rr, gg, bb, matrix[t][b]);
+		#endif
     }
   }
   
@@ -776,6 +1178,11 @@ void show_zeit(int flag) {
 //  if (m > 0) {
   uint8_t animation = 50;
 //  }
+
+#ifdef UHR_114_Fraenkisch                                                                        
+  show_minuten();
+#endif
+
 #ifdef UHR_114                                                                        
   show_minuten();
 #endif
@@ -783,80 +1190,12 @@ void show_zeit(int flag) {
 #ifdef UHR_125
   show_minuten();
 #endif
+
+#ifdef UHR_242
+  show_minuten();
+  show_wetter();
+#endif
+
   led_show();  
 
-// Animation test
-  switch (animation) {
-  case 0: schieben(80, 0);  laufen(20, 1); break;
-  case 1: wischen(100, 0, 0, 80);    break;
-  case 2: schieben(50, 0);  break;
-  case 3: wischen(100, 0, 0, 50);    break;
-  case 4: schieben(50, 0);  break;
-  case 5: wischen(100, 0, 0, 50);    break;
-  case 6: schieben(50, 0);  break;
-  case 7: wischen(100, 0, 0, 50);    break;
-  case 8: schieben(50, 0);  break;
-  case 9: wischen(100, 0, 0, 50);    break;
-  case 10:wischen(100, 0, 0, 50);    break;
-  case 11:schieben(50, 0);  break;
-  case 50:the_matrix(); break;
-  }
-// Animation test
-
 }
-
-
-//------------------------------------------------------------------------------
-/*
-void set_farbe_uhr() {
-
-  unsigned int rr, gg, bb, zz;  
-  rr = G.rgb[2][0];
-  gg = G.rgb[2][1];
-  bb = G.rgb[2][2];
-  zz = rr + gg + bb;
-  if (zz > 150) {
-    zz = zz * 10 / 150;
-    rr = (int)rr * 10 / zz;
-    gg = (int)gg * 10 / zz;
-    bb = (int)bb * 10 / zz;
-  }  
-  G.rr = rr;
-  G.gg = gg;
-  G.bb = bb;
-  for( int i = 0; i < NUM_SMATRIX;i++){ 
-    led_set_pixel(G.rr, G.gg, G.bb, smatrix[i]);          
-  }
-}
-*/
-//------------------------------------------------------------------------------
-
-/*
-void test_uhr(uint16_t d) {
-
-  led_clear(); es_ist();   led_show();  delay(d);
-  led_clear(); fuenf();    led_show();  delay(d);
-  led_clear(); zehn();     led_show();  delay(d);
-  led_clear(); zwanzig();  led_show();  delay(d);
-  led_clear(); viertel();  led_show();  delay(d);
-  led_clear(); nach();     led_show();  delay(d);
-  led_clear(); vor();      led_show();  delay(d);
-  led_clear(); halb();     led_show();  delay(d);
-  led_clear(); h_zwoelf(); led_show();  delay(d);
-  led_clear(); h_zwei();   led_show();  delay(d);
-  led_clear(); eins();     led_show();  delay(d);
-  led_clear(); h_ein();    led_show();  delay(d);
-  led_clear(); h_sieben(); led_show();  delay(d);
-  led_clear(); h_drei();   led_show();  delay(d);
-  led_clear(); h_fuenf();  led_show();  delay(d);
-  led_clear(); h_elf();    led_show();  delay(d);
-  led_clear(); h_neun();   led_show();  delay(d);
-  led_clear(); h_vier();   led_show();  delay(d);
-  led_clear(); h_acht();   led_show();  delay(d);
-  led_clear(); h_zehn();   led_show();  delay(d);
-  led_clear(); h_sechs();  led_show();  delay(d);
-  led_clear(); uhr();      led_show();  delay(d);
-
-}
-*/
-//------------------------------------------------------------------------------
